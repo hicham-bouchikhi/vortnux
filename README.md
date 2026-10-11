@@ -114,7 +114,7 @@ Before tagging a release, configure an RSA publisher key:
 - Tag a semantic version such as `v0.1.0`. CI embeds the repository/public key, signs the final AppImage manifest, and includes both manifest and signature in the draft release.
 - Review the draft and publish it. Only published stable releases are checked by the updater.
 
-The local build intentionally contains an empty trust configuration: it cannot silently trust an arbitrary publisher or unsigned release. AppImage updates retain `<app>.AppImage.previous` and a `before-update-*.sqlite3` backup. On health failure, the old executable and database are restored. A surviving update journal drives next-start recovery. This release has no database migration yet; future migrations require their own compatibility and recovery tests. Keep backups until a release is verified. Arch binaries are updated by pacman; the app refuses to replace them.
+The local build checks published stable releases from `hicham-bouchikhi/vortnux` and reports when none are available. Its publisher signing key is intentionally empty: it can report a newer release, but automatic installation requires a configured key and a verified signed manifest. AppImage updates retain `<app>.AppImage.previous` and a `before-update-*.sqlite3` backup. On health failure, the old executable and database are restored. A surviving update journal drives next-start recovery. This release has no database migration yet; future migrations require their own compatibility and recovery tests. Keep backups until a release is verified. Arch binaries are updated by pacman; the app refuses to replace them.
 
 ## License
 

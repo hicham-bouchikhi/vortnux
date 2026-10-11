@@ -16,7 +16,7 @@ namespace Vortnux.Desktop;
 public sealed partial class MainWindow : Window
 {
     private readonly ModManager manager;
-    private readonly ReleaseClient releases = new();
+    private readonly ReleaseClient releases;
     private UpdateManifest? availableUpdate;
     private readonly HttpClient http;
     private readonly bool ownsHttp;
@@ -57,13 +57,14 @@ public sealed partial class MainWindow : Window
     public string? FocusedEntity => focused;
     public string? CurrentGameId => gameId;
 
-    public MainWindow(ModManager manager, string? startupLink = null, bool updateReadiness = false, HttpClient? httpClient = null, INexusCredentialStore? credentialStore = null)
+    public MainWindow(ModManager manager, string? startupLink = null, bool updateReadiness = false, HttpClient? httpClient = null, INexusCredentialStore? credentialStore = null, ReleaseClient? releaseClient = null)
     {
         this.manager = manager;
         appearance = AppearanceSettings.Load(manager.Store.DirectoryPath);
         InitializeAppearance();
         status = Text("Ready · all changes are verified", 13);
         heading = Text("Your mod library", 30);
+        releases = releaseClient ?? new ReleaseClient();
         credentials = credentialStore;
         ownsHttp = httpClient is null;
         http = httpClient ?? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromMinutes(30) };
@@ -371,10 +372,12 @@ public sealed partial class MainWindow : Window
                     var path = Path.Combine(manager.Store.DirectoryPath, "backup-" + DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss") + ".sqlite3");
                     await Task.Run(() => manager.Store.Backup(path)); status.Text = "Backup saved: " + path;
                 })))));
-        body.Children.Add(Card("Release updates", releases.Trust is null ? "This development build has no trusted release publisher configured. Signed GitHub releases enable AppImage updates. Arch installations update through pacman." : "Publisher: " + releases.Trust.Repository + " · RSA signatures, SHA-256, native smoke test, database backup and GUI health check protect each AppImage update.",
+        body.Children.Add(Card("Release updates", releases.Trust is null ? $"Check published releases from {releases.Repository}. This development build can check for releases; signed publisher builds enable automatic AppImage updates. Arch installations update through pacman." : "Publisher: " + releases.Trust.Repository + " · RSA signatures, SHA-256, native smoke test, database backup and GUI health check protect each AppImage update.",
             Button("Check GitHub release", () => _ = Work(async () =>
             {
-                availableUpdate = await releases.CheckAsync(); status.Text = availableUpdate is null ? "You have the latest release" : "Verified release " + availableUpdate.Version;
+                availableUpdate = null;
+                var result = await releases.CheckAsync(credentialLifetime.Token);
+                availableUpdate = result.Update; status.Text = result.Message;
             })), Text("Native AOT · .NET 10 · Avalonia 12\nOne managed configuration per installation in this proof of concept.", 13, "Muted")));
         if (availableUpdate is { } update)
             body.Children.Add(Card("Verified release " + update.Version, "The current AppImage will be kept as .previous. A database backup is made before replacement.",

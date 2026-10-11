@@ -1,40 +1,58 @@
+using System.Net;
 using System.Text.Json;
 using Vortnux.Core;
 
 namespace Vortnux.Desktop;
 
+public sealed record ReleaseCheck(string Message, UpdateManifest? Update = null);
+
 public sealed class ReleaseClient : IDisposable
 {
-    private readonly HttpClient http = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromMinutes(10) };
+    private readonly HttpClient http;
+    private readonly Version currentVersion;
+    public string Repository { get; }
     public ReleaseTrust? Trust { get; }
-    public ReleaseClient()
+    public ReleaseClient(ReleaseTrust? trust = null, HttpMessageHandler? handler = null, Version? currentVersion = null)
     {
-        using var stream = typeof(ReleaseClient).Assembly.GetManifestResourceStream("Vortnux.ReleaseTrust");
-        if (stream is null) return;
-        var trust = JsonSerializer.Deserialize(stream, AppJson.Default.ReleaseTrust);
-        if (trust is null || trust.Repository.Split('/') is not [var owner, var repo] ||
-            new[] { owner, repo }.Any(part => part.Length == 0 || part.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not '-' and not '_' and not '.')) ||
-            string.IsNullOrWhiteSpace(trust.PublicKey)) return;
-        Trust = trust;
+        http = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromMinutes(10) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Vortnux/0.1.0");
+        if (trust is null)
+        {
+            using var stream = typeof(ReleaseClient).Assembly.GetManifestResourceStream("Vortnux.ReleaseTrust");
+            if (stream is not null) trust = JsonSerializer.Deserialize(stream, AppJson.Default.ReleaseTrust);
+        }
+        Repository = trust?.Repository ?? "";
+        if (Repository.Split('/') is not [var owner, var repo] ||
+            new[] { owner, repo }.Any(part => part.Length == 0 || part.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not '-' and not '_' and not '.')) ||
+            owner is "." or ".." || repo is "." or "..") Repository = "hicham-bouchikhi/vortnux";
+        if (trust?.Repository == Repository && !string.IsNullOrWhiteSpace(trust.PublicKey)) Trust = trust;
+        this.currentVersion = Normalize(currentVersion ?? typeof(ReleaseClient).Assembly.GetName().Version ?? new Version(0, 1, 0));
     }
 
-    public async Task<UpdateManifest?> CheckAsync(CancellationToken cancellationToken = default)
+    public async Task<ReleaseCheck> CheckAsync(CancellationToken cancellationToken = default)
     {
-        var trust = Trust ?? throw new ModManagerException("This build has no trusted release publisher configured.");
-        var bytes = await FetchAsync(new Uri($"https://api.github.com/repos/{trust.Repository}/releases/latest"), 1024 * 1024, cancellationToken);
+        byte[] bytes;
+        try { bytes = await FetchAsync(new Uri($"https://api.github.com/repos/{Repository}/releases/latest"), 1024 * 1024, cancellationToken); }
+        catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new ReleaseCheck($"No published stable GitHub release is available for {Repository}.");
+        }
         using var release = JsonDocument.Parse(bytes);
         var tag = release.RootElement.GetProperty("tag_name").GetString()!;
         if (!tag.StartsWith('v') || !Version.TryParse(tag[1..], out var latest)) throw new ModManagerException("Invalid release version.");
-        if (latest <= (typeof(ReleaseClient).Assembly.GetName().Version ?? new Version(0, 1, 0))) return null;
-        var prefix = $"https://github.com/{trust.Repository}/releases/download/{Uri.EscapeDataString(tag)}/";
+        if (Normalize(latest) <= currentVersion) return new ReleaseCheck("You have the latest release");
+        var prefix = $"https://github.com/{Repository}/releases/download/{Uri.EscapeDataString(tag)}/";
+        if (Trust is not { } trust)
+            return new ReleaseCheck($"GitHub release {tag} is available at https://github.com/{Repository}/releases/latest. Automatic installation requires a build with the publisher's signing key configured.");
         var manifest = await FetchAsync(new Uri(prefix + "update-linux-x64.json"), 65536, cancellationToken);
         var signature = await FetchAsync(new Uri(prefix + "update-linux-x64.sig"), 8192, cancellationToken);
         var verified = Updates.Verify(manifest, signature, trust.PublicKey);
         if (verified.Version != tag[1..] || !verified.Url.StartsWith(prefix, StringComparison.Ordinal))
             throw new ModManagerException("Signed artifact does not match this publisher and release.");
-        return verified;
+        return new ReleaseCheck("Verified release " + verified.Version, verified);
     }
+
+    private static Version Normalize(Version version) => new(version.Major, version.Minor, Math.Max(0, version.Build), Math.Max(0, version.Revision));
 
     public async Task DownloadAsync(UpdateManifest manifest, string path, CancellationToken cancellationToken = default)
     {
@@ -83,7 +101,7 @@ public sealed class ReleaseClient : IDisposable
             if ((int)response.StatusCode is >= 300 and < 400 && response.Headers.Location is { } next)
             { uri = new Uri(uri, next); response.Dispose(); continue; }
             if (!response.IsSuccessStatusCode)
-            { var code = (int)response.StatusCode; response.Dispose(); throw new ModManagerException($"Release server returned HTTP {code}."); }
+            { var code = response.StatusCode; response.Dispose(); throw new HttpRequestException($"Release server returned HTTP {(int)code}.", null, code); }
             return response;
         }
         throw new ModManagerException("Too many release redirects.");
