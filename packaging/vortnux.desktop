@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Vortnux
-GenericName=Manage mods from Nexus Mods
+GenericName=Nexus mod manager
 Comment=Manage mods from Nexus Mods
 Keywords=Nexus;Mods;Collections;Vortnux;
 Exec=vortnux %u
