@@ -53,7 +53,7 @@ Close Cyberpunk before deployment. Downloads can continue while it runs. If depl
 | Game | Manually selected Cyberpunk installations, including Steam/GOG/Proton directories |
 | Installers | Plain ZIP/7z layouts under `archive/pc/mod`, `r6/scripts`, `r6/tweaks`, `red4ext`, `bin/x64`; bare `.archive` files map to `archive/pc/mod` |
 | Ownership | Content-addressed SHA-256 staging, original backups, deterministic overlap precedence, disable/enable/remove, SQLite deployment journal |
-| Nexus | Responsive mod/collection card grid, searchable mod/collection catalog, sorting/pagination, account validation, file listing, exact file download links, authorized free-account nxm links, published GraphQL collection revisions |
+| Nexus | Responsive mod/collection card grid, searchable mod/collection catalog, sorting/pagination, account validation, file listing, exact file download links, authorized free-account nxm links, published GraphQL collection revisions and current v2 archive resolvers |
 | Collections | Manifest inspection, pinned Nexus files, required files and optional-file inclusion, download size/MD5 identity checks where provided, batch installation and collection removal |
 | Notifications | Persistent history, clickable in-app toasts, exact element selection/highlight/scroll, optional background desktop actions, session gaming mode |
 | Releases | Native AOT payload, AppImage, Arch binary package, locked dependency files, CI test and packaging workflow, signed update manifest |

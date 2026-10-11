@@ -11,7 +11,7 @@ namespace Vortnux.Tests;
 public sealed class InstallationUiTests
 {
     private const string Revision = """
-        {"data":{"collectionRevision":{"revisionNumber":2,"revisionStatus":"published","modCount":1,"installationInfo":null,"externalResources":[],"downloadLink":"/v1/collections/night-city/revisions/2/download_link.json","collection":{"name":"Night City"},"modFiles":[{"fileId":2,"optional":false,"file":{"modId":"2380","name":"RED4ext","game":{"domainName":"cyberpunk2077"}}}]}}}
+        {"data":{"collectionRevision":{"revisionNumber":2,"revisionStatus":"published","modCount":1,"installationInfo":null,"externalResources":[],"downloadLink":"/v2/collections/11525/revisions/607172/download_link","collection":{"name":"Night City"},"modFiles":[{"fileId":2,"optional":false,"file":{"modId":"2380","name":"RED4ext","game":{"domainName":"cyberpunk2077"}}}]}}}
         """;
     private static HttpClient Client(Fixture fixture, bool premium = true, List<string>? requests = null)
     {
@@ -25,7 +25,7 @@ public sealed class InstallationUiTests
             { Content = new ByteArrayContent(path == "/collection.zip" ? bundle : archive) };
             if (path.EndsWith("validate.json", StringComparison.Ordinal)) return CatalogTests.Json("{\"user_id\":1,\"name\":\"Fixture\",\"is_premium\":" + (premium ? "true" : "false") + "}");
             if (path.EndsWith("files.json", StringComparison.Ordinal)) return CatalogTests.Json("{\"files\":[{\"name\":\"RED4ext archive\",\"file_id\":2}]}");
-            if (path.StartsWith("/v1/collections/", StringComparison.Ordinal)) return CatalogTests.Json("{\"download_links\":[{\"URI\":\"https://files.nexusmods.com/collection.zip\"}]}");
+            if (path.StartsWith("/v2/collections/", StringComparison.Ordinal)) return CatalogTests.Json("{\"download_links\":[{\"URI\":\"https://files.nexusmods.com/collection.zip\"}]}");
             if (path.EndsWith("download_link.json", StringComparison.Ordinal)) return CatalogTests.Json("[{\"URI\":\"https://files.nexusmods.com/mod.zip\"}]");
             var query = await request.Content!.ReadAsStringAsync(token);
             return CatalogTests.Json(query.Contains("VortnuxCollection", StringComparison.Ordinal) ? Revision :
@@ -62,6 +62,7 @@ public sealed class InstallationUiTests
             Click(window, select); await WaitUntil(() => HasButton(window, "Install reviewed files"));
             Assert.Empty(fixture.Manager.State.Mods); Assert.False(File.Exists(fixture.File("archive/pc/mod/example.archive")));
             Assert.Contains("/v1/games/cyberpunk2077/mods/2380/files/2/download_link.json", requests);
+            if (kind == CatalogKind.Collections) Assert.Contains("/v2/collections/11525/revisions/607172/download_link", requests);
             Click(window, "Install reviewed files");
             await WaitUntil(() => fixture.Manager.State.Mods.Count == 1 && !HasButton(window, "Install reviewed files"));
             Assert.Equal("downloaded mod", File.ReadAllText(fixture.File("archive/pc/mod/example.archive")));

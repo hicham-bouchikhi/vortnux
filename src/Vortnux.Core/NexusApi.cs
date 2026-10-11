@@ -170,12 +170,27 @@ public sealed class NexusApi(HttpClient http, string apiKey)
 
     public async Task<Uri> CollectionDownloadAsync(NexusCollection collection, CancellationToken cancellationToken = default)
     {
-        var uri = new Uri(BaseUri, collection.DownloadLink);
-        if (uri.Host != BaseUri.Host || !uri.AbsolutePath.StartsWith("/v1/collections/", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(collection.DownloadLink) || collection.DownloadLink.Length > 16384 ||
+            collection.DownloadLink.Any(char.IsControl) || collection.DownloadLink.Contains('\\') ||
+            !Uri.TryCreate(BaseUri, collection.DownloadLink, out var uri) || uri.Scheme != "https" ||
+            uri.Host != BaseUri.Host || !uri.IsDefaultPort || uri.UserInfo.Length != 0 || uri.Fragment.Length != 0)
+            throw new ModManagerException("Unexpected collection download resolver.");
+        var parts = uri.AbsolutePath.Split('/');
+        static bool PositiveId(string value) => long.TryParse(value, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var id) && id > 0;
+        if (parts.Length != 7 || parts[1] is not ("v1" or "v2") || parts[2] != "collections" ||
+            parts[3].Length is < 1 or > 80 || parts[3].Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('-' or '_')) ||
+            (parts[1] == "v2" && !PositiveId(parts[3])) || parts[4] != "revisions" || !PositiveId(parts[5]) ||
+            parts[6] is not ("download_link" or "download_link.json"))
             throw new ModManagerException("Unexpected collection download resolver.");
         var response = await RequestAsync(HttpMethod.Get, uri.AbsoluteUri, cancellationToken: cancellationToken);
-        var links = response.TryGetProperty("download_links", out var list) ? list : response.GetProperty("download_link");
-        return ValidateDownloadUri((links.ValueKind == JsonValueKind.Array ? links[0] : links).GetProperty("URI").GetString()!);
+        if (response.ValueKind != JsonValueKind.Object ||
+            (!response.TryGetProperty("download_links", out var links) && !response.TryGetProperty("download_link", out links)))
+            throw new ModManagerException("Nexus did not return a collection archive download URL. Retry or open the collection on Nexus.");
+        if (links.ValueKind == JsonValueKind.Array && links.GetArrayLength() > 0) links = links[0];
+        if (links.ValueKind != JsonValueKind.Object || !links.TryGetProperty("URI", out var address) || address.ValueKind != JsonValueKind.String)
+            throw new ModManagerException("Nexus did not return a collection archive download URL. Retry or open the collection on Nexus.");
+        return ValidateDownloadUri(address.GetString()!);
     }
 
     public static Uri ValidateDownloadUri(string value)
