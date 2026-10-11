@@ -57,6 +57,53 @@ public sealed class CollectionResolverTests
     }
 
     [Theory]
+    [InlineData("premium-files.nexus-cdn.com")]
+    [InlineData("supporter-files.nexus-cdn.com")]
+    public async Task ResolvesAndFetchesCollectionArchiveFromOfficialCdn(string host)
+    {
+        var archiveUrl = $"https://{host}/collections/3333/123/collection.7z?md5=fixture&expires=2000000000";
+        var requests = 0;
+        using var http = new HttpClient(new CatalogTests.Handler((request, _) =>
+        {
+            requests++;
+            if (request.RequestUri!.Host == "api.nexusmods.com")
+            {
+                Assert.Equal("fixture-key", request.Headers.GetValues("apikey").Single());
+                return Task.FromResult(CatalogTests.Json("{\"download_links\":[{\"URI\":\"" + archiveUrl + "\"}]}"));
+            }
+            Assert.Equal(archiveUrl, request.RequestUri.AbsoluteUri);
+            Assert.False(request.Headers.Contains("apikey"));
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c])
+            });
+        }));
+        var directory = Path.Combine(Path.GetTempPath(), "vortnux-cdn-test-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "collection.7z");
+        try
+        {
+            var uri = await new NexusApi(http, "fixture-key").CollectionDownloadAsync(
+                Collection("/v2/collections/11525/revisions/607172/download_link"), TestContext.Current.CancellationToken);
+            await Downloads.FetchAsync(http, uri, path, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.Equal(6, new FileInfo(path).Length);
+            Assert.Equal(2, requests);
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
+
+    [Theory]
+    [InlineData("https://nexus-cdn.com.evil.test/collection.7z")]
+    [InlineData("https://fake-nexus-cdn.com/collection.7z")]
+    [InlineData("https://premium-files.nexus-cdn.com@evil.test/collection.7z")]
+    [InlineData("https://user@premium-files.nexus-cdn.com/collection.7z")]
+    [InlineData("http://premium-files.nexus-cdn.com/collection.7z")]
+    [InlineData("https://premium-files.nexus-cdn.com:8443/collection.7z")]
+    public void RejectsImpersonatedOrUnsafeCdnAddresses(string address)
+    {
+        Assert.Throws<ModManagerException>(() => NexusApi.ValidateDownloadUri(address));
+    }
+
+    [Theory]
     [InlineData("null")]
     [InlineData("{}")]
     [InlineData("{\"download_links\":[]}")]

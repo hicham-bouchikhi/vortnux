@@ -197,7 +197,9 @@ public sealed class NexusApi(HttpClient http, string apiKey)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
             uri.UserInfo.Length != 0 || !uri.IsDefaultPort ||
-            !(uri.Host == "nexusmods.com" || uri.Host.EndsWith(".nexusmods.com", StringComparison.Ordinal)))
+            // Nexus serves collection archives (and some mod files) from its separate CDN domain.
+            !(uri.Host == "nexusmods.com" || uri.Host.EndsWith(".nexusmods.com", StringComparison.Ordinal) ||
+              uri.Host == "nexus-cdn.com" || uri.Host.EndsWith(".nexus-cdn.com", StringComparison.Ordinal)))
             throw new ModManagerException("Unexpected Nexus download host. Open the file on Nexus instead.");
         return uri;
     }
