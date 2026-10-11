@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+vortnux_appdir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+export LD_LIBRARY_PATH="$vortnux_appdir/usr/lib/vortnux${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$vortnux_appdir/usr/lib/vortnux/Vortnux.Desktop" "$@"

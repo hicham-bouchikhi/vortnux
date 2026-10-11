@@ -1,0 +1,133 @@
+name: Test, Native AOT and packages
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vortnux-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: global.json
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev libfontconfig1 libice6 libsm6 libx11-6 libxrandr2 libxcursor1 libxi6 xvfb desktop-file-utils appstream 7zip libsecret-tools
+          python3 -m pip install -r tools/requirements.txt
+      - name: Verify generated contract is current
+        run: |
+          python3 tools/generate_nexus.py
+          git diff --exit-code -- src/Vortnux.Core/Generated/NexusV3Client.g.cs
+      - name: Configure signed publisher for tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          VORTNUX_RELEASE_PUBLIC_KEY: ${{ vars.VORTNUX_RELEASE_PUBLIC_KEY }}
+        run: python3 scripts/prepare-release.py
+      - name: Restore locked dependencies
+        run: dotnet restore Vortnux.slnx --locked-mode -warnaserror
+      - name: Core, transport and GUI tests
+        run: dotnet test Vortnux.slnx -c Release --no-restore -warnaserror --logger 'trx;LogFileName=tests.trx' --results-directory artifacts/test-results
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          vortnux_version=0.1.0
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then vortnux_version="${GITHUB_REF_NAME#v}"; fi
+          [[ "$vortnux_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "value=$vortnux_version" >> "$GITHUB_OUTPUT"
+      - name: Publish Native AOT with all warnings as errors
+        run: dotnet publish src/Vortnux.Desktop -c Release -r linux-x64 -o artifacts/linux-x64 -p:RestoreLockedMode=true -p:Version=${{ steps.version.outputs.value }} -warnaserror
+      - name: Native payload and GUI smoke checks
+        run: |
+          artifacts/linux-x64/Vortnux.Desktop --smoke-test
+          VORTNUX_STATE_DIR="$RUNNER_TEMP/vortnux-ui" timeout 40s xvfb-run -a artifacts/linux-x64/Vortnux.Desktop --ui-smoke-test
+      - name: AppImage and portable archive
+        env:
+          VORTNUX_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          bash scripts/package.sh
+          APPIMAGE_EXTRACT_AND_RUN=1 dist/Vortnux-${VORTNUX_VERSION}-x86_64.AppImage --smoke-test
+          VORTNUX_STATE_DIR="$RUNNER_TEMP/vortnux-appimage-ui" APPIMAGE_EXTRACT_AND_RUN=1 timeout 40s xvfb-run -a dist/Vortnux-${VORTNUX_VERSION}-x86_64.AppImage --ui-smoke-test
+      - name: Sign release manifest
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          VORTNUX_VERSION: ${{ steps.version.outputs.value }}
+          VORTNUX_SIGNING_KEY: ${{ secrets.VORTNUX_SIGNING_KEY }}
+        run: python3 scripts/sign-release.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-linux
+          path: dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: test-evidence
+          path: |
+            artifacts/test-results
+            artifacts/screenshots
+  arch:
+    needs: linux
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-linux
+          path: dist
+      - name: Build and install Arch package in clean container
+        shell: bash
+        run: |
+          pacman -Syu --noconfirm fontconfig libx11 libice libsm libxrandr libxcursor libxi libnotify namcap 7zip libsecret
+          useradd --create-home builder
+          mkdir -p /home/builder/package
+          cp dist/vortnux-*-linux-x64.tar.gz /home/builder/package/
+          vortnux_archive=$(basename /home/builder/package/vortnux-*-linux-x64.tar.gz)
+          vortnux_version=${vortnux_archive#vortnux-}
+          vortnux_version=${vortnux_version%-linux-x64.tar.gz}
+          vortnux_hash=$(sha256sum "/home/builder/package/$vortnux_archive")
+          vortnux_hash=${vortnux_hash%% *}
+          sed -e "s/pkgver=0.1.0/pkgver=$vortnux_version/" -e "s/REPLACED_BY_PACKAGING_SCRIPT/$vortnux_hash/" packaging/arch/PKGBUILD > /home/builder/package/PKGBUILD
+          chown -R builder:builder /home/builder/package
+          su builder -c 'cd /home/builder/package && makepkg --cleanbuild'
+          cp /home/builder/package/*.pkg.tar.zst dist/
+          namcap dist/*.pkg.tar.zst
+          pacman -U --noconfirm dist/*.pkg.tar.zst
+          vortnux --smoke-test
+          pacman -R --noconfirm vortnux
+          test ! -e /usr/bin/vortnux
+          cd dist
+          sha256sum ./*.pkg.tar.zst > ARCH-SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-arch
+          path: |
+            dist/*.pkg.tar.zst
+            dist/ARCH-SHA256SUMS
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux, arch]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Create reviewable signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "Vortnux $GITHUB_REF_NAME" --notes 'Native AOT Linux build. AppImage, portable archive, Arch package and signed update metadata. See repository documentation for supported installer layouts and collection limitations.'

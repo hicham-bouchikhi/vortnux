@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vortnux"
+version = "0.1.0"
+description = "A native Linux download manager for Nexus Mods and collections"
+requires-python = ">=3.11"
+dependencies = ["PyQt6>=6.7,<7", "requests>=2.32,<3"]
+
+[project.scripts]
+vortnux = "vortnux.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["vortnux*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

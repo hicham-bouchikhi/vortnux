@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Vortnux
+Comment=Manage Cyberpunk 2077 mods and collections
+Exec=vortnux %u
+Icon=vortnux
+Terminal=false
+Categories=Game;
+MimeType=x-scheme-handler/nxm;
+StartupWMClass=Vortnux.Desktop

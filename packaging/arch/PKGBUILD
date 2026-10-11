@@ -1,0 +1,22 @@
+# Binary packaging of the locally tested Native AOT publish; no runtime SDK dependency.
+pkgname=vortnux
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Native Cyberpunk mod and collection manager'
+arch=('x86_64')
+license=('MIT')
+depends=('glibc' 'openssl' 'fontconfig' 'libx11' 'libice' 'libsm' 'libxrandr' 'libxcursor' 'libxi' '7zip' 'libsecret')
+optdepends=('libnotify: background desktop notifications' 'xdg-utils: desktop integration')
+source=("vortnux-${pkgver}-linux-x64.tar.gz")
+# Populated with the exact tested archive checksum by scripts/package.sh.
+sha256sums=('REPLACED_BY_PACKAGING_SCRIPT')
+
+package() {
+  install -d "$pkgdir/usr/lib/vortnux" "$pkgdir/usr/bin"
+  cp -a "$srcdir/publish/." "$pkgdir/usr/lib/vortnux/"
+  ln -s /usr/lib/vortnux/Vortnux.Desktop "$pkgdir/usr/bin/vortnux"
+  install -Dm644 "$srcdir/vortnux.desktop" "$pkgdir/usr/share/applications/io.vortnux.Vortnux.desktop"
+  install -Dm644 "$srcdir/vortnux.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/vortnux.svg"
+  install -Dm644 "$srcdir/vortnux.metainfo.xml" "$pkgdir/usr/share/metainfo/io.vortnux.Vortnux.metainfo.xml"
+  install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/vortnux/LICENSE"
+}
