@@ -99,7 +99,8 @@ The official [GraphQL API](https://graphql.nexusmods.com/) exposes `collectionRe
 
 ## CI and signed delivery
 
-The [CI template](.github/ci-template.yml) tests, publishes Native AOT, checks the native GUI under Xvfb, packages and tests the AppImage, and builds/installs/removes the Arch package in an Arch container. Tagged builds create a **draft** GitHub release after those jobs pass. GitHub rejected uploading the active workflow because the current `gh` login lacks the `workflow` scope. CI activation is pending: authorize that scope and place this template at `.github/workflows/ci.yml`. The source and screenshots are published in [the GitHub repository](https://github.com/hicham-bouchikhi/vortnux).
+The [GitHub Actions workflow](.github/workflows/ci.yml) tests, publishes Native AOT, checks the native GUI under Xvfb, packages and tests the AppImage, and builds/installs/removes the Arch package in an Arch container. Pushes and pull requests run the pipeline. Tagged builds create a **draft** GitHub release after those jobs pass. Check [Actions](https://github.com/hicham-bouchikhi/vortnux/actions) for hosted results.
+
 
 Before tagging a release, configure an RSA publisher key:
 
