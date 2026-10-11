@@ -138,7 +138,7 @@ jobs:
           pattern: release-*
           merge-multiple: true
           path: dist
-      - name: Create reviewable signed release
+      - name: Publish signed release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "Vortnux $GITHUB_REF_NAME" --notes 'Native AOT Linux build. AppImage, portable archive, Arch package and signed update metadata. See repository documentation for supported installer layouts and collection limitations.'
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "Vortnux $GITHUB_REF_NAME" --generate-notes --notes 'Linux Native AOT mod manager for Nexus Mods. Includes AppImage, portable archive, Arch package, checksums and signed AppImage update metadata. Features searchable mod and collection cards, Linux keyring authentication, reviewed installation, uninstall restoration, notifications and themes. This is a Cyberpunk 2077 proof of concept; collection installer rules, external resources and additional games remain unsupported. See the README for installation and compatibility details.'

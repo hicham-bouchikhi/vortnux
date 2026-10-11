@@ -104,15 +104,15 @@ The official [GraphQL API](https://graphql.nexusmods.com/) exposes `collectionRe
 
 ## CI and signed delivery
 
-The [GitHub Actions workflow](.github/workflows/ci.yml) tests, publishes Native AOT, checks the native GUI under Xvfb, packages and tests the AppImage, and builds/installs/removes the Arch package in an Arch container. Pushes and pull requests run the pipeline. Tagged builds create a **draft** GitHub release after those jobs pass. Check [Actions](https://github.com/hicham-bouchikhi/vortnux/actions) for hosted results.
+The [GitHub Actions workflow](.github/workflows/ci.yml) tests, publishes Native AOT, checks the native GUI under Xvfb, packages and tests the AppImage, and builds/installs/removes the Arch package in an Arch container. Pushes and pull requests run the pipeline. Tags such as `v0.1.0` automatically publish a signed GitHub release after every job passes. Download the AppImage or Arch package from [the latest release](https://github.com/hicham-bouchikhi/vortnux/releases/latest). Check [Actions](https://github.com/hicham-bouchikhi/vortnux/actions) for hosted results.
 
 
-Before tagging a release, configure an RSA publisher key:
+The publisher key is configured in this repository's Actions settings. To reproduce delivery in another repository, configure an RSA publisher key:
 
 - Store the PEM public key in GitHub Actions variable `VORTNUX_RELEASE_PUBLIC_KEY`.
-- Store the matching PEM private key in Actions secret `VORTNUX_SIGNING_KEY`; keep the original private key outside this repository.
-- Tag a semantic version such as `v0.1.0`. CI embeds the repository/public key, signs the final AppImage manifest, and includes both manifest and signature in the draft release.
-- Review the draft and publish it. Only published stable releases are checked by the updater.
+- Store the matching PEM private key in Actions secret `VORTNUX_SIGNING_KEY`; keep a protected backup and never commit it.
+- Tag a semantic version such as `v0.1.0`. CI embeds the repository/public key, signs the final AppImage manifest, and publishes the packages, manifest and signature after validation.
+- Only published stable releases are checked by the updater.
 
 The local build checks published stable releases from `hicham-bouchikhi/vortnux` and reports when none are available. Its publisher signing key is intentionally empty: it can report a newer release, but automatic installation requires a configured key and a verified signed manifest. AppImage updates retain `<app>.AppImage.previous` and a `before-update-*.sqlite3` backup. On health failure, the old executable and database are restored. A surviving update journal drives next-start recovery. This release has no database migration yet; future migrations require their own compatibility and recovery tests. Keep backups until a release is verified. Arch binaries are updated by pacman; the app refuses to replace them.
 
