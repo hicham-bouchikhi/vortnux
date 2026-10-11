@@ -104,12 +104,20 @@ public sealed partial class MainWindow : Window
         var footer = new StackPanel { Margin = new Thickness(32, 12), Spacing = 8 };
         footer.Children.Add(progress); footer.Children.Add(Row(status, Button("Cancel download", () => cancellation?.Cancel())));
         Grid.SetRow(footer, 2); right.Children.Add(footer);
+        InitializeNotifications();
+        header.ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto");
+        notificationBell.Margin = new Thickness(12, 0, 0, 0);
+        Grid.SetColumn(notificationBell, 2); header.Children.Add(notificationBell);
         Content = shell;
-        Opened += (_, _) =>
+        Opened += async (_, _) =>
         {
             notifications = new WindowNotificationManager(this) { MaxItems = 3, Position = NotificationPosition.BottomRight };
-            if (startupLink is not null) { linkText = startupLink; Navigate("Downloads"); }
-            if (credentials is not null && !updateReadiness) _ = RestoreAccountAsync(startupLink is null);
+            if (startupLink is not null) ReceiveLaunch(startupLink);
+            if (credentials is not null && !updateReadiness)
+            {
+                await RestoreAccountAsync(startupLink is null);
+                if (!closed && startupLink is not null && nexus is not null && resolvedMod is null && collection is null) await Resolve();
+            }
         };
         Closed += (_, _) => { closed = true; credentialLifetime.Cancel(); ClearThumbnailViews(); catalogImages.Dispose(); catalogSession?.Dispose(); cancellation?.Cancel(); if (ownsHttp) http.Dispose(); releases.Dispose(); };
         if (!updateReadiness)
@@ -190,7 +198,7 @@ public sealed partial class MainWindow : Window
             route.Value.BorderThickness = new Thickness(3, 0, 0, 0);
             route.Value.FontWeight = route.Key == page ? FontWeight.SemiBold : FontWeight.Normal;
         }
-        navigation.IsEnabled = !busy; games.IsEnabled = !busy;
+        navigation.IsEnabled = !busy || backgroundOperation; games.IsEnabled = !busy;
         switch (page)
         {
             case "Games": RenderGames(); break;
@@ -201,7 +209,7 @@ public sealed partial class MainWindow : Window
             case "Activity": RenderActivity(); break;
             case "Settings": RenderSettings(); break;
         }
-        body.IsEnabled = !busy;
+        body.IsEnabled = !busy || backgroundOperation && page == "Browse";
     }
 
     private void RenderGames()
@@ -384,30 +392,57 @@ public sealed partial class MainWindow : Window
                 Button("Install update & restart", () => _ = InstallUpdate(update))));
     }
 
-    private async Task Work(Func<Task> operation)
+    private async Task Work(Func<Task> operation, string? downloadTitle = null)
     {
         if (busy) return;
-        busy = true; body.IsEnabled = false; navigation.IsEnabled = false; games.IsEnabled = false;
+        busy = true; backgroundOperation = downloadTitle is not null;
+        body.IsEnabled = false; navigation.IsEnabled = backgroundOperation; games.IsEnabled = false;
+        if (downloadTitle is not null)
+        {
+            cancellation = new CancellationTokenSource();
+            currentOperation = Operations.Begin(downloadTitle, () => cancellation?.Cancel());
+        }
         status.Text = "Working…";
-        try { await operation(); }
-        catch (OperationCanceledException) { status.Text = "Cancelled · no pending files deployed"; }
+        try
+        {
+            await operation();
+            if (currentOperation is { } completed) Operations.Finish(completed, OperationStatus.Completed, "Ready to review in Downloads");
+        }
+        catch (OperationCanceledException)
+        {
+            status.Text = "Cancelled · no pending files deployed";
+            if (currentOperation is { } cancelled) Operations.Finish(cancelled, OperationStatus.Cancelled, "Download cancelled");
+        }
         catch (Exception error)
         {
+            if (closed) return;
             status.Text = error.Message;
+            if (currentOperation is { } failed) Operations.Finish(failed, OperationStatus.Failed, "Download stopped. Check the status message and try again.");
             if (manager.State.Journal is not null) status.Text += " · Recovery required in Settings";
             notifications?.Show(new Notification("Operation stopped", status.Text, NotificationType.Error));
         }
         finally
         {
-            busy = false; cancellation?.Dispose(); cancellation = null; progress.Value = 0; RefreshGames(); Render();
-            if (pendingActivity is { } pending) { pendingActivity = null; Activate(pending); }
-            if (page == "Browse" && catalogSession is { Result: null, Loading: false, Error: null }) _ = SearchCatalog();
+            busy = false; backgroundOperation = false; currentOperation = null;
+            cancellation?.Dispose(); cancellation = null;
+            if (!closed)
+            {
+                progress.Value = 0; RefreshGames(); Render(); RenderNotifications();
+                DrainIncomingLinks();
+                if (pendingActivity is { } pending) { pendingActivity = null; Activate(pending); }
+                if (page == "Browse" && catalogSession is { Result: null, Loading: false, Error: null }) _ = SearchCatalog();
+            }
         }
     }
 
     private Task Change(Func<Activity> operation) => Work(async () => Notify(await Task.Run(operation)));
     private async Task InstallUpdate(UpdateManifest update)
     {
+        if (incomingLinks.Any(item => item.Entry.Status == OperationStatus.Queued))
+        {
+            status.Text = "Open or dismiss queued Nexus links in Notifications before restarting for an update.";
+            return;
+        }
         if (!await Confirm("Install verified release " + update.Version + "?", "Vortnux will restart after the updated GUI passes its startup health check.")) return;
         await Work(async () =>
         {
@@ -417,7 +452,14 @@ public sealed partial class MainWindow : Window
             try
             {
                 await releases.DownloadAsync(update, download, cancellation.Token);
-                await Updates.ApplyAppImageAsync(download, current, update, manager.Store, cancellation.Token);
+                if (incomingLinks.Any(item => item.Entry.Status == OperationStatus.Queued))
+                {
+                    status.Text = "A Nexus link arrived. Open or dismiss queued links before restarting for the update.";
+                    return;
+                }
+                if (Program.Coordinator is { } coordinator) coordinator.Accepting = false;
+                try { await Updates.ApplyAppImageAsync(download, current, update, manager.Store, cancellation.Token); }
+                catch { if (Program.Coordinator is { } owner) owner.Accepting = true; throw; }
                 Close();
             }
             finally { if (File.Exists(download)) File.Delete(download); }
@@ -489,25 +531,36 @@ public sealed partial class MainWindow : Window
         var api = nexus ?? throw new ModManagerException("Connect Nexus first.");
         var user = account ?? throw new ModManagerException("Connect Nexus first.");
         var link = resolvedMod ?? new NexusModLink("cyberpunk2077", file.ModId);
-        cancellation = new CancellationTokenSource();
-        var uri = await api.DownloadAsync(link with { FileId = file.FileId }, user, cancellation.Token);
+        var uri = await api.DownloadAsync(link with { FileId = file.FileId }, user, cancellation!.Token);
         var path = DownloadPath();
-        await Downloads.FetchAsync(http, uri, path, Progress(), cancellation.Token);
+        await Downloads.FetchAsync(http, uri, path, Progress(), cancellation!.Token);
+        cancellation!.Token.ThrowIfCancellationRequested();
         var mod = await Task.Run(() => manager.Stager.Stage(path, id, file.Name));
+        cancellation!.Token.ThrowIfCancellationRequested();
         staged.Clear(); staged.Add(mod); batchId = null; replaceConflicts = false;
         status.Text = "Downloaded · review staged files";
-    });
+    }, "Downloading " + file.Name);
 
     private string DownloadPath() => Path.Combine(manager.Store.DirectoryPath, "downloads", Guid.NewGuid().ToString("N") + ".zip");
-    private IProgress<double> Progress() => new Progress<double>(value => { progress.Value = value; status.Text = $"Downloading… {value:F0}%"; });
+    private IProgress<double> Progress(double offset = 0, double scale = 1, string? fileName = null)
+    {
+        var tracked = currentOperation;
+        return new Progress<double>(value =>
+        {
+            if (closed || tracked is not null && tracked.Status != OperationStatus.Running) return;
+            var overall = offset + value * scale;
+            var message = (fileName is null ? "" : fileName + " · ") + $"{overall:F0}% downloaded";
+            progress.Value = overall; status.Text = "Downloading… " + message;
+            if (tracked is not null) Operations.Report(tracked, overall, message);
+        });
+    }
 
     private Task LoadRemoteManifest() => Work(async () =>
     {
         var api = nexus ?? throw new ModManagerException("Connect Nexus first.");
         var selected = collection ?? throw new ModManagerException("Resolve a collection first.");
-        cancellation = new CancellationTokenSource();
-        var uri = await api.CollectionDownloadAsync(selected, cancellation.Token); var path = DownloadPath();
-        await Downloads.FetchAsync(http, uri, path, Progress(), cancellation.Token);
+        var uri = await api.CollectionDownloadAsync(selected, cancellation!.Token); var path = DownloadPath();
+        await Downloads.FetchAsync(http, uri, path, Progress(), cancellation!.Token);
         using var stream = new MemoryStream();
         await Task.Run(() =>
         {
@@ -522,7 +575,7 @@ public sealed partial class MainWindow : Window
             throw new ModManagerException("Collection manifest does not match the resolved revision.");
         collectionPlan = plan; batchId = selected.Slug + "@" + selected.Revision;
         status.Text = "Manifest checked · review required and optional mods";
-    });
+    }, "Downloading collection manifest");
 
     private Task ImportManifest() => Work(async () =>
     {
@@ -543,21 +596,29 @@ public sealed partial class MainWindow : Window
         var user = account ?? throw new ModManagerException("Connect Nexus first.");
         if (!user.Premium) throw new ModManagerException("Automatic collection downloads require Premium. Individual authorized nxm files can be imported separately.");
         var plan = collectionPlan ?? throw new ModManagerException("Check a collection manifest first.");
-        var incoming = new List<ManagedMod>(); cancellation = new CancellationTokenSource();
-        foreach (var entry in plan.Entries.Where(entry => !entry.Optional || includeOptional))
+        var incoming = new List<ManagedMod>();
+        var selectedEntries = plan.Entries.Where(entry => !entry.Optional || includeOptional).ToArray();
+        for (var index = 0; index < selectedEntries.Length; index++)
         {
-            var uri = await api.DownloadAsync(new NexusModLink("cyberpunk2077", entry.ModId, entry.FileId), user, cancellation.Token);
-            var path = DownloadPath(); await Downloads.FetchAsync(http, uri, path, Progress(), cancellation.Token);
+            var entry = selectedEntries[index];
+            var uri = await api.DownloadAsync(new NexusModLink("cyberpunk2077", entry.ModId, entry.FileId), user, cancellation!.Token);
+            var path = DownloadPath();
+            await Downloads.FetchAsync(http, uri, path, Progress(index * 100.0 / selectedEntries.Length, 1.0 / selectedEntries.Length, entry.Name), cancellation!.Token);
+            cancellation!.Token.ThrowIfCancellationRequested();
             await Task.Run(() => Collections.VerifyDownload(path, entry));
             incoming.Add(await Task.Run(() => manager.Stager.Stage(path, id, entry.Name, batchId)));
         }
+        cancellation!.Token.ThrowIfCancellationRequested();
         if (incoming.Count == 0) throw new ModManagerException("No collection files selected.");
         staged.Clear(); staged.AddRange(incoming); replaceConflicts = false;
         status.Text = "Collection staged · review all destination paths";
-    });
+    }, "Downloading " + (collectionPlan?.Name ?? "collection"));
 
     private void Notify(Activity activity)
     {
+        var entry = Operations.Begin(activity.Title, () => { }, activity.Target.Page);
+        entry.Open = () => Activate(activity);
+        Operations.Finish(entry, OperationStatus.Completed, activity.Message);
         notifications?.Show(new Notification(activity.Title, activity.Message, NotificationType.Success,
             TimeSpan.FromSeconds(8), () => Activate(activity)));
         if (!quiet && (!IsActive || WindowState == WindowState.Minimized)) _ = NativeNotification(activity);

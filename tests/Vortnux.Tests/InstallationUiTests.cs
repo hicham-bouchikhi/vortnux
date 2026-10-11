@@ -13,7 +13,7 @@ public sealed class InstallationUiTests
     private const string Revision = """
         {"data":{"collectionRevision":{"revisionNumber":2,"revisionStatus":"published","modCount":1,"installationInfo":null,"externalResources":[],"downloadLink":"/v2/collections/11525/revisions/607172/download_link","collection":{"name":"Night City"},"modFiles":[{"fileId":2,"optional":false,"file":{"modId":"2380","name":"RED4ext","game":{"domainName":"cyberpunk2077"}}}]}}}
         """;
-    private static HttpClient Client(Fixture fixture, bool premium = true, List<string>? requests = null)
+    private static HttpClient Client(Fixture fixture, bool premium = true, List<string>? requests = null, Func<CancellationToken, Task>? waitForDownload = null)
     {
         var archive = File.ReadAllBytes(fixture.Zip(("example.archive", "downloaded mod")));
         var manifest = ApiTests.Manifest.Replace("\"modId\":1", "\"modId\":2380", StringComparison.Ordinal);
@@ -21,8 +21,12 @@ public sealed class InstallationUiTests
         return new HttpClient(new CatalogTests.Handler(async (request, token) =>
         {
             var path = request.RequestUri!.AbsolutePath; requests?.Add(path);
-            if (request.RequestUri.Host == "files.nexusmods.com") return new HttpResponseMessage(HttpStatusCode.OK)
-            { Content = new ByteArrayContent(path == "/collection.zip" ? bundle : archive) };
+            if (request.RequestUri.Host == "files.nexusmods.com")
+            {
+                if (waitForDownload is not null) await waitForDownload(token);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                { Content = new ByteArrayContent(path == "/collection.zip" ? bundle : archive) };
+            }
             if (path.EndsWith("validate.json", StringComparison.Ordinal)) return CatalogTests.Json("{\"user_id\":1,\"name\":\"Fixture\",\"is_premium\":" + (premium ? "true" : "false") + "}");
             if (path.EndsWith("files.json", StringComparison.Ordinal)) return CatalogTests.Json("{\"files\":[{\"name\":\"RED4ext archive\",\"file_id\":2}]}");
             if (path.StartsWith("/v2/collections/", StringComparison.Ordinal)) return CatalogTests.Json("{\"download_links\":[{\"URI\":\"https://files.nexusmods.com/collection.zip\"}]}");
@@ -103,4 +107,61 @@ public sealed class InstallationUiTests
         }
         finally { window.Close(); }
     }
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DownloadAllowsBrowsingQueuesLinksAndRecordsOutcome(bool cancel)
+    {
+        using var fixture = new Fixture();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var http = Client(fixture, waitForDownload: token => release.Task.WaitAsync(token));
+        var window = new MainWindow(fixture.Manager, httpClient: http); window.Show();
+        try
+        {
+            Connect(window); Click(window, "Install");
+            await WaitUntil(() => HasButton(window, "Install this file"));
+            Click(window, "Install this file");
+            var operation = Assert.Single(window.Operations.Entries);
+            Assert.Equal(OperationStatus.Running, operation.Status);
+            Click(window, "Browse"); Assert.Equal("Browse", window.CurrentPage);
+            Assert.True(FindButton(window, "Search").IsEffectivelyEnabled);
+            window.ReceiveLaunch("nxm://cyberpunk2077/mods/99/files/100?key=private&expires=9999999999");
+            Assert.Equal("Browse", window.CurrentPage);
+            var queued = Assert.Single(window.Operations.Entries, entry => entry.Status == OperationStatus.Queued);
+            Assert.DoesNotContain("private", queued.Message);
+            if (cancel) window.Operations.Cancel(operation); else release.SetResult();
+            await WaitUntil(() => operation.Status != OperationStatus.Running);
+            Assert.Equal(cancel ? OperationStatus.Cancelled : OperationStatus.Completed, operation.Status);
+            await WaitUntil(() => window.Operations.ActiveCount == 1);
+            Assert.Equal(OperationStatus.Queued, queued.Status);
+            window.Navigate("Downloads");
+            Assert.Equal(!cancel, HasButton(window, "Install reviewed files"));
+            Assert.Empty(fixture.Manager.State.Mods);
+            window.Operations.ClearHistory();
+            Assert.Same(queued, Assert.Single(window.Operations.Entries));
+            window.Operations.Cancel(queued);
+            Assert.Equal(OperationStatus.Cancelled, queued.Status);
+            Assert.Equal(0, window.Operations.ActiveCount);
+        }
+        finally { release.TrySetResult(); window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task FailedDownloadIsRetainedInNotificationHistory()
+    {
+        using var fixture = new Fixture();
+        using var http = Client(fixture, waitForDownload: _ => throw new HttpRequestException("fixture failure"));
+        var window = new MainWindow(fixture.Manager, httpClient: http); window.Show();
+        try
+        {
+            Connect(window); Click(window, "Install");
+            await WaitUntil(() => HasButton(window, "Install this file"));
+            Click(window, "Install this file");
+            await WaitUntil(() => window.Operations.Entries.Any(entry => entry.Status == OperationStatus.Failed));
+            Assert.Equal(1, window.Operations.UnreadCount);
+            Assert.Empty(fixture.Manager.State.Mods);
+        }
+        finally { window.Close(); }
+    }
+
 }

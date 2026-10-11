@@ -88,7 +88,7 @@ public sealed partial class MainWindow
 
     private Task SearchCatalog(int offset = 0, bool refresh = false)
     {
-        if (catalogSession is null || busy) return Task.CompletedTask;
+        if (catalogSession is null || busy && !backgroundOperation) return Task.CompletedTask;
         if (catalogSession.Query.Kind != catalogKind || catalogSession.Query.Text != catalogText.Trim() || catalogSession.Query.Sort != catalogSort) offset = 0;
         scroll.Offset = default;
         return catalogSession.SearchAsync(new CatalogQuery(catalogKind, catalogText.Trim(), catalogSort, offset), refresh);

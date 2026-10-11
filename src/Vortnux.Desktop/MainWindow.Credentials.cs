@@ -4,6 +4,8 @@ namespace Vortnux.Desktop;
 
 public sealed partial class MainWindow
 {
+    internal Task ResumeAfterUpdateAsync() => credentials is null ? Task.CompletedTask : RestoreAccountAsync(true);
+
     private async Task RestoreAccountAsync(bool browse)
     {
         await Work(async () =>
