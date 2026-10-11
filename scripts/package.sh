@@ -6,6 +6,10 @@ vortnux_version=${VORTNUX_VERSION:-0.1.0}
 [[ "$vortnux_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid version' >&2; exit 1; }
 vortnux_publish="$vortnux_root/artifacts/linux-x64"
 test -x "$vortnux_publish/Vortnux.Desktop"
+vortnux_build=$("$vortnux_publish/Vortnux.Desktop" --build-number)
+vortnux_commit=$("$vortnux_publish/Vortnux.Desktop" --git-commit)
+[[ "$vortnux_build" =~ ^[1-9][0-9]*$ && "$vortnux_commit" =~ ^[0-9a-f]{40}$ ]] || { echo 'Publish a stamped build with scripts/publish.sh before packaging.' >&2; exit 1; }
+[[ $("$vortnux_publish/Vortnux.Desktop" --release-version) == "$vortnux_version" ]] || { echo 'Package version differs from the executable.' >&2; exit 1; }
 "$vortnux_publish/Vortnux.Desktop" --smoke-test
 vortnux_stage="$vortnux_root/artifacts/package-stage"
 mkdir -p "$vortnux_stage/publish" "$vortnux_root/dist"
@@ -14,7 +18,9 @@ install -m755 "$vortnux_publish/Vortnux.Desktop" "$vortnux_stage/publish/"
 for vortnux_library in "$vortnux_publish"/*.so; do install -m755 "$vortnux_library" "$vortnux_stage/publish/"; done
 cp packaging/vortnux.{desktop,svg,metainfo.xml} "$vortnux_stage/"
 install -m644 LICENSE "$vortnux_stage/LICENSE"
-tar -czf "dist/vortnux-${vortnux_version}-linux-x64.tar.gz" -C "$vortnux_stage" publish vortnux.desktop vortnux.svg vortnux.metainfo.xml LICENSE
+echo "$vortnux_build" > "$vortnux_stage/build-number"
+"$vortnux_publish/Vortnux.Desktop" --version > "$vortnux_stage/build-info.txt"
+tar -czf "dist/vortnux-${vortnux_version}-linux-x64.tar.gz" -C "$vortnux_stage" publish vortnux.desktop vortnux.svg vortnux.metainfo.xml LICENSE build-number build-info.txt
 
 vortnux_appdir="$vortnux_root/artifacts/Vortnux.AppDir"
 rm -rf "$vortnux_appdir"
@@ -67,10 +73,10 @@ mkdir -p "$vortnux_arch"
 cp "dist/vortnux-${vortnux_version}-linux-x64.tar.gz" "$vortnux_arch/"
 vortnux_hash=$(sha256sum "$vortnux_arch/vortnux-${vortnux_version}-linux-x64.tar.gz")
 vortnux_hash=${vortnux_hash%% *}
-sed -e "s/pkgver=0.1.0/pkgver=${vortnux_version}/" -e "s/REPLACED_BY_PACKAGING_SCRIPT/${vortnux_hash}/" packaging/arch/PKGBUILD > "$vortnux_arch/PKGBUILD"
+sed -e "s/pkgver=0.1.0/pkgver=${vortnux_version}/" -e "s/pkgrel=1/pkgrel=${vortnux_build}/" -e "s/REPLACED_BY_PACKAGING_SCRIPT/${vortnux_hash}/" packaging/arch/PKGBUILD > "$vortnux_arch/PKGBUILD"
 if command -v makepkg >/dev/null; then
   (cd "$vortnux_arch" && makepkg --force --cleanbuild)
-  cp "$vortnux_arch"/*.pkg.tar.zst dist/
+  cp "$vortnux_arch/vortnux-${vortnux_version}-${vortnux_build}-x86_64.pkg.tar.zst" dist/
 fi
 (cd dist && sha256sum ./*.AppImage ./*.tar.gz > SHA256SUMS)
 if compgen -G 'dist/*.pkg.tar.zst' >/dev/null; then (cd dist && sha256sum ./*.pkg.tar.zst >> SHA256SUMS); fi

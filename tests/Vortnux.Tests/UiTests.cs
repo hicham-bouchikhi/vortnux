@@ -19,6 +19,19 @@ public static class TestAppBuilder
 public sealed class UiTests
 {
     [AvaloniaFact]
+    public void SettingsDisplaysTheCompiledBuildIdentity()
+    {
+        using var fixture = new Fixture(); var window = new MainWindow(fixture.Manager); window.Show();
+        try
+        {
+            window.Navigate("Settings");
+            Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), block => block.Text == Vortnux.Core.BuildInfo.Display);
+            Assert.Contains(" · build ", Vortnux.Core.BuildInfo.Display);
+            Assert.Contains(" · commit ", Vortnux.Core.BuildInfo.Display);
+        }
+        finally { window.Close(); }
+    }
+    [AvaloniaFact]
     public void SidebarButtonsOpenEveryRouteAndWindowRenders()
     {
         using var fixture = new Fixture(); var window = new MainWindow(fixture.Manager); window.Show();

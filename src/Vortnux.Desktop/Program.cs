@@ -10,6 +10,10 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args is ["--version"]) { Console.WriteLine(BuildInfo.Display); return 0; }
+        if (args is ["--build-number"]) { Console.WriteLine(BuildInfo.Number); return 0; }
+        if (args is ["--release-version"]) { Console.WriteLine(BuildInfo.Version); return 0; }
+        if (args is ["--git-commit"]) { Console.WriteLine(BuildInfo.Commit); return 0; }
         if (args.Contains("--smoke-test", StringComparer.Ordinal)) return SmokeTest.Run();
         if (args.FirstOrDefault() != "--update-health-check")
         {

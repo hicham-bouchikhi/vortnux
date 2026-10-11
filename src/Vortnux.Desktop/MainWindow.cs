@@ -332,6 +332,7 @@ public sealed partial class MainWindow : Window
 
     private void RenderSettings()
     {
+        body.Children.Add(Card("About Vortnux", BuildInfo.Display));
         var key = new TextBox { Name = "NexusApiKey", PasswordChar = '●', PlaceholderText = "Personal Nexus API key", MinWidth = 350 };
         body.Children.Add(Card("Your Nexus account", (account is null ? "Not connected. " : $"Connected as {account.Name}. ") + (credentials?.Description ?? "Session-only connection.") + " Keys are sent only to api.nexusmods.com. Obtain your personal key from Nexus account settings.", key,
             Row(Button("Connect", () => _ = Work(async () =>

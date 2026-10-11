@@ -14,5 +14,21 @@
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Version>0.1.0</Version>
+    <VortnuxBuildNumber Condition="'$(VortnuxBuildNumber)' == ''">0</VortnuxBuildNumber>
+    <VortnuxGitCommit Condition="'$(VortnuxGitCommit)' == ''">unknown</VortnuxGitCommit>
   </PropertyGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>VortnuxVersion</_Parameter1>
+      <_Parameter2>$(Version)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>VortnuxBuildNumber</_Parameter1>
+      <_Parameter2>$(VortnuxBuildNumber)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>VortnuxGitCommit</_Parameter1>
+      <_Parameter2>$(VortnuxGitCommit)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>

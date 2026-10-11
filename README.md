@@ -29,7 +29,7 @@ chmod +x dist/Vortnux-0.1.0-x86_64.AppImage
 APPIMAGE_EXTRACT_AND_RUN=1 ./dist/Vortnux-0.1.0-x86_64.AppImage
 
 # Arch package; installs the native app and declares its system dependencies:
-sudo pacman -U dist/vortnux-0.1.0-1-x86_64.pkg.tar.zst
+sudo pacman -U "dist/vortnux-0.1.0-$(artifacts/linux-x64/Vortnux.Desktop --build-number)-x86_64.pkg.tar.zst"
 vortnux
 ```
 
@@ -72,11 +72,12 @@ Requires .NET SDK 10.0.401, clang and the native Linux dependencies above. Depen
 ```sh
 dotnet restore Vortnux.slnx --locked-mode -warnaserror
 dotnet test Vortnux.slnx -c Release --no-restore -warnaserror
-dotnet publish src/Vortnux.Desktop -c Release -r linux-x64 \
-  -o artifacts/linux-x64 -p:RestoreLockedMode=true -warnaserror
+bash scripts/publish.sh
 artifacts/linux-x64/Vortnux.Desktop --smoke-test
 bash scripts/package.sh
 ```
+
+**Build identity:** Settings → About Vortnux and `vortnux --version` show the release version, build number and full Git commit. `scripts/publish.sh` stamps the number of commits reachable from HEAD, so each new commit on `main` increases the build number and rebuilding the same commit preserves it. Arch uses this number as `pkgrel` (`0.1.0-<build>`), allowing pacman to compare successive development packages. Full Git history and committed source are required; CI fetches the complete history. Branch counts are not globally ordered: the commit ID identifies branch builds. Plain `dotnet run` shows build `0` / commit `unknown`; use the publish script for stamped packages. Tagged CI additionally embeds its configured publisher key. AppImage release updates still follow signed release versions; development build numbers do not automatically publish a release.
 
 Compiler, linker, AOT and MSBuild warnings fail these commands. No compiler warning suppressions are configured. Packaging pins and checks appimagetool 1.9.1 and the AppImage runtime hashes. The runtime's upstream `continuous` URL can change: a hash mismatch stops packaging and requires an explicit reviewed pin update. Keep the verified tool cache for rebuilding the same snapshot. The local unpublished development build has no homepage URL; Local packaging explicitly defers AppStream catalogue validation because no repository homepage exists; this is the only development packaging exception. CI stamps its real `GITHUB_REPOSITORY` into the AppImage metadata. This metadata limitation does not relax compiler warning policy.
 

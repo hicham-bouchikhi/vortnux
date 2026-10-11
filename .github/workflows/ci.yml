@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: global.json
@@ -45,10 +47,15 @@ jobs:
           [[ "$vortnux_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "value=$vortnux_version" >> "$GITHUB_OUTPUT"
       - name: Publish Native AOT with all warnings as errors
-        run: dotnet publish src/Vortnux.Desktop -c Release -r linux-x64 -o artifacts/linux-x64 -p:RestoreLockedMode=true -p:Version=${{ steps.version.outputs.value }} -warnaserror
+        env:
+          VORTNUX_VERSION: ${{ steps.version.outputs.value }}
+        run: bash scripts/publish.sh
       - name: Native payload and GUI smoke checks
         run: |
           artifacts/linux-x64/Vortnux.Desktop --smoke-test
+          test "$(artifacts/linux-x64/Vortnux.Desktop --build-number)" = "$(git rev-list --count HEAD)"
+          test "$(artifacts/linux-x64/Vortnux.Desktop --git-commit)" = "$GITHUB_SHA"
+          artifacts/linux-x64/Vortnux.Desktop --version
           VORTNUX_STATE_DIR="$RUNNER_TEMP/vortnux-ui" timeout 40s xvfb-run -a artifacts/linux-x64/Vortnux.Desktop --ui-smoke-test
       - name: AppImage and portable archive
         env:
@@ -97,13 +104,17 @@ jobs:
           vortnux_version=${vortnux_version%-linux-x64.tar.gz}
           vortnux_hash=$(sha256sum "/home/builder/package/$vortnux_archive")
           vortnux_hash=${vortnux_hash%% *}
-          sed -e "s/pkgver=0.1.0/pkgver=$vortnux_version/" -e "s/REPLACED_BY_PACKAGING_SCRIPT/$vortnux_hash/" packaging/arch/PKGBUILD > /home/builder/package/PKGBUILD
+          vortnux_build=$(tar -xOf "/home/builder/package/$vortnux_archive" build-number)
+          [[ "$vortnux_build" =~ ^[1-9][0-9]*$ ]]
+          sed -e "s/pkgver=0.1.0/pkgver=$vortnux_version/" -e "s/pkgrel=1/pkgrel=$vortnux_build/" -e "s/REPLACED_BY_PACKAGING_SCRIPT/$vortnux_hash/" packaging/arch/PKGBUILD > /home/builder/package/PKGBUILD
           chown -R builder:builder /home/builder/package
           su builder -c 'cd /home/builder/package && makepkg --cleanbuild'
           cp /home/builder/package/*.pkg.tar.zst dist/
           namcap dist/*.pkg.tar.zst
           pacman -U --noconfirm dist/*.pkg.tar.zst
           vortnux --smoke-test
+          test "$(vortnux --build-number)" = "$vortnux_build"
+          test "$(pacman -Q vortnux)" = "vortnux $vortnux_version-$vortnux_build"
           pacman -R --noconfirm vortnux
           test ! -e /usr/bin/vortnux
           cd dist
