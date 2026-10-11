@@ -13,6 +13,16 @@ public static class SmokeTest
         var root = Path.Combine(Path.GetTempPath(), "vortnux-smoke-" + Guid.NewGuid().ToString("N"));
         try
         {
+            using (var http = new HttpClient(new CollectionResolverHandler()))
+            {
+                foreach (var resolver in new[] { "/v2/collections/11525/revisions/607172/download_link", "/v1/collections/iszwwe/revisions/481/download_link.json" })
+                {
+                    var collection = new NexusCollection("Fixture", "iszwwe", 481, resolver, []);
+                    var download = new NexusApi(http, "fixture-key").CollectionDownloadAsync(collection).GetAwaiter().GetResult();
+                    if (download.AbsoluteUri != "https://files.nexusmods.com/collection.zip")
+                        throw new InvalidOperationException("Native collection resolver failed.");
+                }
+            }
             var gameRoot = Path.Combine(root, "game");
             Directory.CreateDirectory(Path.Combine(gameRoot, "bin", "x64"));
             File.WriteAllText(Path.Combine(gameRoot, "bin", "x64", "Cyberpunk2077.exe"), "fixture");
@@ -42,10 +52,23 @@ public static class SmokeTest
             var metadata = JsonSerializer.SerializeToUtf8Bytes(manifest, AppJson.Default.UpdateManifest);
             var signature = signingKey.SignData(metadata, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
             Updates.VerifyArtifact(zip, Updates.Verify(metadata, signature, signingKey.ExportSubjectPublicKeyInfoPem()));
-            Console.WriteLine("PASS: Native executable, SQLite, ZIP, install, disable, enable, uninstall.");
+            Console.WriteLine("PASS: Native executable, collection resolvers, SQLite, ZIP, install, disable, enable, uninstall.");
             return 0;
         }
         catch (Exception error) { Console.Error.WriteLine(error.Message); return 1; }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private sealed class CollectionResolverHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri?.Host != "api.nexusmods.com" || !request.Headers.GetValues("apikey").SequenceEqual(["fixture-key"]))
+                throw new InvalidOperationException("Native collection resolver request failed.");
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"download_links\":[{\"URI\":\"https://files.nexusmods.com/collection.zip\"}]}")
+            });
+        }
     }
 }
