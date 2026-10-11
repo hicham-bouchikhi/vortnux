@@ -1,7 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=Vortnux
-Comment=Manage Cyberpunk 2077 mods and collections
+GenericName=Manage mods from Nexus Mods
+Comment=Manage mods from Nexus Mods
+Keywords=Nexus;Mods;Collections;Vortnux;
 Exec=vortnux %u
 Icon=vortnux
 Terminal=false

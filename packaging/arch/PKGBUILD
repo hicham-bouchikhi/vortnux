@@ -2,7 +2,7 @@
 pkgname=vortnux
 pkgver=0.1.0
 pkgrel=1
-pkgdesc='Native Cyberpunk mod and collection manager'
+pkgdesc='Manage mods from Nexus Mods'
 arch=('x86_64')
 license=('MIT')
 depends=('glibc' 'openssl' 'fontconfig' 'libx11' 'libice' 'libsm' 'libxrandr' 'libxcursor' 'libxi' '7zip' 'libsecret')
