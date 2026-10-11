@@ -38,7 +38,7 @@ public sealed class App : Application
 {
     public override void Initialize()
     {
-        RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+        RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Default;
         Styles.Add(new FluentTheme());
     }
 

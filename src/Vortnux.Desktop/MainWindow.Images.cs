@@ -28,10 +28,10 @@ public sealed partial class MainWindow
         var layout = vertical ? new Grid { RowDefinitions = new RowDefinitions("Auto,*") } : new Grid { ColumnDefinitions = new ColumnDefinitions("200,*") };
         var image = new Image { Name = "CatalogThumbnail", Width = vertical ? 320 : 200, Height = vertical ? 180 : 132, Stretch = Stretch.UniformToFill };
         AutomationProperties.SetName(image, item.Name + " preview");
-        var fallback = Text(CatalogImages.IsAllowed(item.ImageUrl) ? "Loading image…" : "No image available", 13, "#ADB4C9");
+        var fallback = Text(CatalogImages.IsAllowed(item.ImageUrl) ? "Loading image…" : "No image available", 13, "Muted");
         fallback.HorizontalAlignment = HorizontalAlignment.Center; fallback.VerticalAlignment = VerticalAlignment.Center;
         var preview = new Grid(); preview.Children.Add(image); preview.Children.Add(fallback);
-        layout.Children.Add(new Border { Child = preview, Background = Brush("#282D40"), CornerRadius = new CornerRadius(8), ClipToBounds = true,
+        layout.Children.Add(new Border { Child = preview, Background = Brush("Preview"), CornerRadius = new CornerRadius(8), ClipToBounds = true,
             Width = vertical ? 320 : 200, Height = vertical ? 180 : 132, VerticalAlignment = VerticalAlignment.Top });
         if (vertical) { Grid.SetRow(content, 1); content.Margin = new Thickness(0, 16, 0, 0); }
         else { Grid.SetColumn(content, 1); content.Margin = new Thickness(18, 0, 0, 0); }

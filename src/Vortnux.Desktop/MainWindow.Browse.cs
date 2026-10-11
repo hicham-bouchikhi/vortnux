@@ -43,8 +43,8 @@ public sealed partial class MainWindow
         };
         var mods = Button("Browse mods", () => OpenBrowse(CatalogKind.Mods));
         var collections = Button("Browse collections", () => OpenBrowse(CatalogKind.Collections));
-        mods.Background = Brush(catalogKind == CatalogKind.Mods ? "#514283" : "#232736");
-        collections.Background = Brush(catalogKind == CatalogKind.Collections ? "#514283" : "#232736");
+        mods.Background = Brush(catalogKind == CatalogKind.Mods ? "Selected" : "Control");
+        collections.Background = Brush(catalogKind == CatalogKind.Collections ? "Selected" : "Control");
         body.Children.Add(Card("Nexus Mods · Cyberpunk 2077", $"Connected as {account?.Name} · available {(catalogKind == CatalogKind.Mods ? "mods" : "published collections")}",
             Row(mods, collections), Row(search, Button("Search", () => _ = SearchCatalog()), Button("Clear", () => { catalogText = ""; _ = SearchCatalog(); })),
             Row(Text("Sort by"), sort)));
@@ -66,7 +66,7 @@ public sealed partial class MainWindow
         previous.IsEnabled = query.Offset > 0;
         next.IsEnabled = result.Items.Count > 0 && query.Offset + result.Items.Count < result.Total;
         body.Children.Add(Row(Text($"{result.Total:N0} results · page {query.Offset / query.Count + 1}"), previous, next));
-        if (result.Items.Count == 0) body.Children.Add(Text("No results. Try a different name or clear your search.", 16, "#ADB4C9"));
+        if (result.Items.Count == 0) body.Children.Add(Text("No results. Try a different name or clear your search.", 16, "Muted"));
         var cards = CardGrid("NexusCardGrid");
         body.Children.Add(cards);
         foreach (var item in result.Items)

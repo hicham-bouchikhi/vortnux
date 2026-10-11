@@ -10,6 +10,10 @@ Mods and collections use wrapping cards across rows and columns, with thumbnails
 
 Rendered application UI with a demo account and public Nexus catalog data. Mod thumbnails belong to their respective authors. [Collection card preview](docs/screenshots/collections-cards.png) uses fixture collection data.
 
+## Appearance
+
+Open **Settings → Appearance** to choose **Follow system**, **Dark**, or **Light**, plus one of six gamer accents: Cyber cyan, Arcade violet, Toxic green, Neon pink, Solar orange, or Crimson red. Changes apply immediately and are saved for the next launch. Follow system tracks theme changes reported by your desktop, including while Vortnux is open.
+
 ## Run
 
 To run from source, select the desktop project explicitly (requires the SDK pinned in `global.json`):

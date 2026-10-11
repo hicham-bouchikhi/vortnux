@@ -25,8 +25,8 @@ public sealed partial class MainWindow : Window
     private readonly CancellationTokenSource credentialLifetime = new();
     private readonly StackPanel body = new() { Spacing = 16, Margin = new Thickness(32) };
     private readonly ScrollViewer scroll;
-    private readonly TextBlock status = Text("Ready · all changes are verified", 13);
-    private readonly TextBlock heading = Text("Your mod library", 30);
+    private readonly TextBlock status;
+    private readonly TextBlock heading;
     private readonly ComboBox games = new() { MinWidth = 260, HorizontalAlignment = HorizontalAlignment.Right };
     private readonly StackPanel navigation = new() { Spacing = 8 };
     private readonly Dictionary<string, Button> routes = [];
@@ -60,17 +60,21 @@ public sealed partial class MainWindow : Window
     public MainWindow(ModManager manager, string? startupLink = null, bool updateReadiness = false, HttpClient? httpClient = null, INexusCredentialStore? credentialStore = null)
     {
         this.manager = manager;
+        appearance = AppearanceSettings.Load(manager.Store.DirectoryPath);
+        InitializeAppearance();
+        status = Text("Ready · all changes are verified", 13);
+        heading = Text("Your mod library", 30);
         credentials = credentialStore;
         ownsHttp = httpClient is null;
         http = httpClient ?? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromMinutes(30) };
         catalogImages = new CatalogImages(http);
         Title = "Manage mods from Nexus Mods";
         Width = 1120; Height = 760; MinWidth = 820; MinHeight = 580;
-        Background = Brush("#10121A");
+        Background = Brush("Canvas");
         var shell = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*") };
         var side = new StackPanel { Margin = new Thickness(20, 28), Spacing = 24 };
-        side.Children.Add(Text("V O R T N U X", 23, "#C4B5FD"));
-        side.Children.Add(Text("MAKE IT YOUR GAME", 10, "#9198AD"));
+        side.Children.Add(Text("V O R T N U X", 23, "Accent"));
+        side.Children.Add(new Border { Background = Brush("Selected"), CornerRadius = new CornerRadius(4), Padding = new Thickness(10, 7), Child = Text("MAKE IT YOUR GAME", 10, "Accent") });
         foreach (var route in new[] { "Games", "Browse", "Mods", "Collections", "Downloads", "Activity", "Settings" })
         {
             var button = Button(route, () => Navigate(route));
@@ -79,8 +83,8 @@ public sealed partial class MainWindow : Window
             routes.Add(route, button); navigation.Children.Add(button);
         }
         side.Children.Add(navigation);
-        side.Children.Add(Text("CYBERPUNK 2077\nProof of concept · 0.1.0", 12, "#9198AD"));
-        var sidebar = new Border { Background = Brush("#181B26"), Child = side };
+        side.Children.Add(Text("CYBERPUNK 2077\nProof of concept · 0.1.0", 12, "Muted"));
+        var sidebar = new Border { Background = Brush("Sidebar"), BorderBrush = Brush("Accent"), BorderThickness = new Thickness(3, 0, 0, 0), Child = side };
         shell.Children.Add(sidebar);
         var right = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
         Grid.SetColumn(right, 1); shell.Children.Add(right);
@@ -116,12 +120,12 @@ public sealed partial class MainWindow : Window
     }
 
     private sealed record GameChoice(string Id, string Label) { public override string ToString() => Label; }
-    private static IBrush Brush(string color) => new SolidColorBrush(Color.Parse(color));
-    private static TextBlock Text(string value, double size = 14, string color = "#EEF0F8")
+    private IBrush Brush(string token) => themeBrushes[token];
+    private TextBlock Text(string value, double size = 14, string color = "Text")
         => new() { Text = value, FontSize = size, Foreground = Brush(color), TextWrapping = TextWrapping.Wrap };
     private static Button Button(string label, Action action)
     {
-        var button = new Button { Content = label, Padding = new Thickness(16, 10), CornerRadius = new CornerRadius(8) };
+        var button = new Button { Content = label, Padding = new Thickness(16, 10), CornerRadius = new CornerRadius(6) };
         button.Click += (_, _) => action();
         return button;
     }
@@ -134,9 +138,9 @@ public sealed partial class MainWindow : Window
     private Border Card(string title, string detail, params Control[] controls)
     {
         var panel = new StackPanel { Spacing = 12 };
-        panel.Children.Add(Text(title, 19)); panel.Children.Add(Text(detail, 13, "#ADB4C9"));
+        panel.Children.Add(Text(title, 19)); panel.Children.Add(Text(detail, 13, "Muted"));
         foreach (var control in controls) panel.Children.Add(control);
-        return new Border { Background = Brush("#1E2230"), CornerRadius = new CornerRadius(12), Padding = new Thickness(20), Child = panel };
+        return new Border { Background = Brush("Card"), BorderBrush = Brush("Outline"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(20), Child = panel };
     }
     private string RequireGame() => gameId ?? throw new ModManagerException("Add and select a Cyberpunk installation in Games first.");
 
@@ -177,7 +181,14 @@ public sealed partial class MainWindow : Window
         body.Children.Clear();
         ClearThumbnailViews();
         heading.Text = page switch { "Browse" => "Manage mods from Nexus Mods", "Mods" => "Your mod library", "Collections" => "Your installed collections", "Games" => "Your games", "Downloads" => "Bring in something new", "Activity" => "Activity & notifications", _ => "Make yourself at home" };
-        foreach (var route in routes) route.Value.Background = Brush(route.Key == page ? "#514283" : "#232736");
+        foreach (var route in routes)
+        {
+            route.Value.Background = Brush(route.Key == page ? "Selected" : "Sidebar");
+            route.Value.Foreground = Brush(route.Key == page ? "Accent" : "Muted");
+            route.Value.BorderBrush = Brush(route.Key == page ? "Accent" : "Sidebar");
+            route.Value.BorderThickness = new Thickness(3, 0, 0, 0);
+            route.Value.FontWeight = route.Key == page ? FontWeight.SemiBold : FontWeight.Normal;
+        }
         navigation.IsEnabled = !busy; games.IsEnabled = !busy;
         switch (page)
         {
@@ -228,11 +239,11 @@ public sealed partial class MainWindow : Window
         results.Children.Clear();
         var mods = manager.State.Mods.Where(mod => mod.GameId == gameId && mod.Name.Contains(modFilter, StringComparison.OrdinalIgnoreCase) &&
             (modStateFilter == 0 || mod.Enabled == (modStateFilter == 1))).ToList();
-        if (mods.Count == 0) results.Children.Add(Text("No installed mods match this filter.", 14, "#ADB4C9"));
+        if (mods.Count == 0) results.Children.Add(Text("No installed mods match this filter.", 14, "Muted"));
         foreach (var mod in mods)
         {
             var card = Card(mod.Name, $"{(mod.Enabled ? "Enabled" : "Disabled")} · {mod.Files.Count} files" + (mod.CollectionId is null ? "" : " · collection member"),
-                Text(string.Join("\n", mod.Files.Select(file => file.Path)), 12, "#909AB6"),
+                Text(string.Join("\n", mod.Files.Select(file => file.Path)), 12, "Muted"),
                 CatalogActions(Button(mod.Enabled ? "Disable" : "Enable", () => _ = Change(() => manager.Toggle(mod.Id))),
                     Button("Uninstall", () => _ = ConfirmChange("Uninstall " + mod.Name + "?", "Tracked files will be removed or restored to the previous owner.", () => manager.Remove(mod.Id)))));
             card.Width = 360; AddEntity(card, mod.Id, results);
@@ -245,7 +256,7 @@ public sealed partial class MainWindow : Window
     {
         (target ?? body).Children.Add(card);
         if (focused != id) return;
-        card.BorderBrush = Brush("#AD92FF"); card.BorderThickness = new Thickness(2);
+        card.BorderBrush = Brush("Accent"); card.BorderThickness = new Thickness(2);
         Dispatcher.UIThread.Post(() => card.BringIntoView(), DispatcherPriority.Loaded);
     }
 
@@ -268,7 +279,7 @@ public sealed partial class MainWindow : Window
         results.Children.Clear();
         var groups = manager.State.Mods.Where(mod => mod.GameId == gameId && mod.CollectionId is not null).GroupBy(mod => mod.CollectionId!)
             .Where(group => group.Key.Contains(collectionFilter, StringComparison.OrdinalIgnoreCase) || group.Any(mod => mod.Name.Contains(collectionFilter, StringComparison.OrdinalIgnoreCase))).ToList();
-        if (groups.Count == 0) results.Children.Add(Text("No installed collections match this filter.", 14, "#ADB4C9"));
+        if (groups.Count == 0) results.Children.Add(Text("No installed collections match this filter.", 14, "Muted"));
         foreach (var group in groups)
         {
             var id = group.Key;
@@ -305,7 +316,7 @@ public sealed partial class MainWindow : Window
             installCollection.IsEnabled = account is { Premium: true };
             body.Children.Add(Card(collectionPlan.Name, $"{collectionPlan.Entries.Count(entry => !entry.Optional)} required · {collectionPlan.Entries.Count(entry => entry.Optional)} optional\n" +
                 string.Join("\n", collectionPlan.Entries.Select(entry => $"{entry.Name} · file {entry.FileId}{(entry.Optional ? " · optional" : "")}")),
-                optional, installCollection, Text(account is { Premium: true } ? "Review staged destinations before deployment." : "Automatic collection downloads require a Nexus Premium account.", 12, "#ADB4C9")));
+                optional, installCollection, Text(account is { Premium: true } ? "Review staged destinations before deployment." : "Automatic collection downloads require a Nexus Premium account.", 12, "Muted")));
         }
         if (staged.Count > 0)
         {
@@ -321,7 +332,7 @@ public sealed partial class MainWindow : Window
 
     private void RenderActivity()
     {
-        body.Children.Add(Text("Click an event to open its game and exact mod or collection. Removed items open their activity record.", 14, "#ADB4C9"));
+        body.Children.Add(Text("Click an event to open its game and exact mod or collection. Removed items open their activity record.", 14, "Muted"));
         foreach (var item in manager.State.Activities.AsEnumerable().Reverse())
         {
             var captured = item;
@@ -332,6 +343,7 @@ public sealed partial class MainWindow : Window
 
     private void RenderSettings()
     {
+        RenderAppearanceSettings();
         body.Children.Add(Card("About Vortnux", BuildInfo.Display));
         var key = new TextBox { Name = "NexusApiKey", PasswordChar = '●', PlaceholderText = "Personal Nexus API key", MinWidth = 350 };
         body.Children.Add(Card("Your Nexus account", (account is null ? "Not connected. " : $"Connected as {account.Name}. ") + (credentials?.Description ?? "Session-only connection.") + " Keys are sent only to api.nexusmods.com. Obtain your personal key from Nexus account settings.", key,
@@ -348,7 +360,7 @@ public sealed partial class MainWindow : Window
                 if (credentials is not null) await credentials.ForgetAsync(credentialLifetime.Token);
                 DisconnectAccount(); status.Text = "Saved API key removed";
             })))));
-        body.Children.Add(Text("Disconnect ends this session. Forget saved key removes the stored key and disconnects.", 13, "#ADB4C9"));
+        body.Children.Add(Text("Disconnect ends this session. Forget saved key removes the stored key and disconnects.", 13, "Muted"));
         var quietBox = new CheckBox { Content = "Gaming mode · keep notifications inside Vortnux", IsChecked = quiet };
         quietBox.IsCheckedChanged += (_, _) => quiet = quietBox.IsChecked == true;
         body.Children.Add(Card("Notifications", "Every completed installation creates a persistent activity and clickable toast. Background desktop notifications include an Open action when the desktop supports it.", quietBox));
@@ -363,7 +375,7 @@ public sealed partial class MainWindow : Window
             Button("Check GitHub release", () => _ = Work(async () =>
             {
                 availableUpdate = await releases.CheckAsync(); status.Text = availableUpdate is null ? "You have the latest release" : "Verified release " + availableUpdate.Version;
-            })), Text("Native AOT · .NET 10 · Avalonia 12\nOne managed configuration per installation in this proof of concept.", 13, "#ADB4C9")));
+            })), Text("Native AOT · .NET 10 · Avalonia 12\nOne managed configuration per installation in this proof of concept.", 13, "Muted")));
         if (availableUpdate is { } update)
             body.Children.Add(Card("Verified release " + update.Version, "The current AppImage will be kept as .previous. A database backup is made before replacement.",
                 Button("Install update & restart", () => _ = InstallUpdate(update))));
@@ -416,7 +428,8 @@ public sealed partial class MainWindow : Window
 
     private async Task<bool> Confirm(string title, string detail)
     {
-        var dialog = new Window { Title = title, Width = 480, Height = 230, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var dialog = new Window { Title = title, Width = 480, Height = 230, CanResize = false, Background = Brush("Canvas"), WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        dialog.Bind(RequestedThemeVariantProperty, this.GetObservable(ActualThemeVariantProperty));
         var panel = new StackPanel { Margin = new Thickness(24), Spacing = 20 };
         panel.Children.Add(Text(title, 20)); panel.Children.Add(Text(detail));
         panel.Children.Add(Row(Button("Continue", () => dialog.Close(true)), Button("Cancel", () => dialog.Close(false))));
